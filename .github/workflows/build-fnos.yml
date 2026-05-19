@@ -1,0 +1,66 @@
+name: Build FNOS for ECB-PR51
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'FNOS version'
+        required: true
+        default: 'latest'
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FNOS_BASE_URL: "http://thunder.liveupdate.fnnas.com:8080/arm/trim/1.1.31/nanopi-r5s/fnos_Mainland-PE_arm_1.1.31_nanopi-r5s_1353.img.gz"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo apt-get clean
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget xz-utils gzip bzip2 zip unzip \
+            e2fsprogs btrfs-progs parted dosfstools
+          sudo apt-get clean
+          df -h /
+
+      - name: Build FNOS flash package
+        run: |
+          sudo ./rebuild-fnos.sh "${{ env.FNOS_BASE_URL }}"
+
+      - name: Package artifacts
+        run: |
+          cd output/flash-pkg
+          gzip -c fnos-ecb-pr51-raw.img > ../../fnos-ecb-pr51-raw.img.gz
+          zip -j ../../line-flash-pkg.zip \
+            idbloader.img uboot.img boot.img rootfs.img README.txt
+          ls -lh ../../
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: fnos-v${{ github.run_number }}
+          name: "FNOS for ECB-PR51 (build ${{ github.run_number }})"
+          body: |
+            FNOS firmware for Lenovo ECB-PR51
+            - Custom DTB (ECB-PR51 hardware)
+            - AP6256 WiFi/BT firmware pre-installed
+          files: |
+            fnos-ecb-pr51-raw.img.gz
+            line-flash-pkg.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
